@@ -8,6 +8,19 @@ using Prodesk.Helper.Uia;
 
 namespace Prodesk.Helper.Input;
 
+public class VisualActionState
+{
+    public string Type { get; set; } = "click"; // "click" | "type" | "drag" | "key" | "scroll" | "hover"
+    public int X { get; set; }
+    public int Y { get; set; }
+    public int? FromX { get; set; }
+    public int? FromY { get; set; }
+    public int? ToX { get; set; }
+    public int? ToY { get; set; }
+    public string Description { get; set; } = "";
+    public int DurationMs { get; set; } = 150;
+}
+
 public class ActionVerificationDto
 {
     public string Via { get; set; } = "uia";
@@ -28,6 +41,7 @@ public class ActionEngine
     private readonly PolicyManager _policy;
 
     public Action<Win32.RECT?>? OnOverlayUpdate { get; set; }
+    public Action<VisualActionState>? OnVisualAction { get; set; }
     public Action? OnEmergencyStopTriggered { get; set; }
 
     public ActionEngine(UiaEngine uia, OcrEngineService ocr, ClipboardService clipboard, PolicyManager policy)
@@ -190,6 +204,14 @@ public class ActionEngine
         object? resolvedSelector = null)
     {
         CheckTargetWindowSecurity(targetHwnd);
+        OnVisualAction?.Invoke(new VisualActionState
+        {
+            Type = "click",
+            X = screenX,
+            Y = screenY,
+            Description = $"Tıklanıyor: {(string.IsNullOrEmpty(element?.Name) ? $"({screenX}, {screenY})" : element.Name)}"
+        });
+
         var beforeWins = _uia.EnumerateTopWindows();
         IntPtr origFg = Win32.GetForegroundWindow();
         Win32.GetCursorPos(out var origCursor);
@@ -228,7 +250,7 @@ public class ActionEngine
 
             if (uiaOk)
             {
-                await Task.Delay(120);
+                await Task.Delay(25);
                 var ver = BuildVerification("uia", origFg, origCursor, beforeWins);
                 return ($"Clicked [{element.Uid}] \"{element.Name}\" via UIA pattern (no focus/cursor disruption).", ver, resolvedSelector);
             }
@@ -264,7 +286,7 @@ public class ActionEngine
                     Win32.PostMessage(msgHwnd, Win32.WM_LBUTTONUP, IntPtr.Zero, lParam);
                 }
 
-                await Task.Delay(120);
+                await Task.Delay(25);
                 if (mode == "message")
                 {
                     var ver = BuildVerification("message", origFg, origCursor, beforeWins);
@@ -286,15 +308,15 @@ public class ActionEngine
         {
             usedTier = "input";
             Win32.SetCursorPos(screenX, screenY);
-            await Task.Delay(25);
+            await Task.Delay(15);
 
             SendMouseClickInput(button);
             if (isDouble)
             {
-                await Task.Delay(45);
+                await Task.Delay(25);
                 SendMouseClickInput(button);
             }
-            await Task.Delay(80);
+            await Task.Delay(30);
         }
         finally
         {
@@ -323,6 +345,14 @@ public class ActionEngine
         object? resolvedSelector = null)
     {
         CheckTargetWindowSecurity(targetHwnd);
+        OnVisualAction?.Invoke(new VisualActionState
+        {
+            Type = "type",
+            X = screenX,
+            Y = screenY,
+            Description = $"Yazılıyor: \"{(text.Length > 25 ? text[..25] + "..." : text)}\""
+        });
+
         var beforeWins = _uia.EnumerateTopWindows();
         IntPtr origFg = Win32.GetForegroundWindow();
         Win32.GetCursorPos(out var origCursor);
@@ -349,7 +379,7 @@ public class ActionEngine
                     IntPtr hwnd = element.NativeHwnd != IntPtr.Zero ? element.NativeHwnd : element.WindowHwnd;
                     SendEnterToHwnd(hwnd);
                 }
-                await Task.Delay(100);
+                await Task.Delay(25);
                 var ver = BuildVerification("uia", origFg, origCursor, beforeWins);
                 return ($"Typed {text.Length} char(s) into [{element.Uid}] via UIA ValuePattern.", ver, resolvedSelector);
             }
@@ -486,6 +516,14 @@ public class ActionEngine
         int repeat = 1,
         string mode = "auto")
     {
+        OnVisualAction?.Invoke(new VisualActionState
+        {
+            Type = "key",
+            X = 0,
+            Y = 0,
+            Description = $"Klavye: {string.Join(" + ", chords)}"
+        });
+
         IntPtr targetHwnd = IntPtr.Zero;
         if (!string.IsNullOrWhiteSpace(uid))
         {
@@ -512,7 +550,7 @@ public class ActionEngine
             if (targetHwnd != IntPtr.Zero && targetHwnd != origFg)
             {
                 BringWindowToFrontInternal(targetHwnd);
-                await Task.Delay(60);
+                await Task.Delay(30);
             }
 
             for (int r = 0; r < repeat; r++)
@@ -520,10 +558,10 @@ public class ActionEngine
                 foreach (var chord in chords)
                 {
                     SendKeyChord(chord);
-                    await Task.Delay(40);
+                    await Task.Delay(20);
                 }
             }
-            await Task.Delay(120);
+            await Task.Delay(30);
         }
         finally
         {
@@ -546,6 +584,19 @@ public class ActionEngine
         int toY,
         int durationMs = 350)
     {
+        OnVisualAction?.Invoke(new VisualActionState
+        {
+            Type = "drag",
+            FromX = fromX,
+            FromY = fromY,
+            ToX = toX,
+            ToY = toY,
+            X = toX,
+            Y = toY,
+            DurationMs = durationMs,
+            Description = $"Sürükleniyor: ({fromX}, {fromY}) -> ({toX}, {toY})"
+        });
+
         await EnsureUserIdleForPhysicalInputAsync();
         CheckCornerFailsafe();
 
@@ -556,9 +607,9 @@ public class ActionEngine
         try
         {
             Win32.SetCursorPos(fromX, fromY);
-            await Task.Delay(40);
+            await Task.Delay(20);
             SendRawMouseFlag(Win32.MOUSEEVENTF_LEFTDOWN);
-            await Task.Delay(40);
+            await Task.Delay(20);
 
             int steps = Math.Max(8, durationMs / 20);
             for (int i = 1; i <= steps; i++)
@@ -568,11 +619,11 @@ public class ActionEngine
                 int cx = (int)Math.Round(fromX + (toX - fromX) * t);
                 int cy = (int)Math.Round(fromY + (toY - fromY) * t);
                 Win32.SetCursorPos(cx, cy);
-                await Task.Delay(Math.Max(10, durationMs / steps));
+                await Task.Delay(Math.Max(8, durationMs / steps));
             }
 
             SendRawMouseFlag(Win32.MOUSEEVENTF_LEFTUP);
-            await Task.Delay(80);
+            await Task.Delay(30);
         }
         finally
         {
@@ -598,6 +649,14 @@ public class ActionEngine
         string? toEdge = null,
         string mode = "auto")
     {
+        OnVisualAction?.Invoke(new VisualActionState
+        {
+            Type = "scroll",
+            X = screenX,
+            Y = screenY,
+            Description = $"Kaydırma: {(dy > 0 ? "Aşağı" : "Yukarı")}"
+        });
+
         var beforeWins = _uia.EnumerateTopWindows();
         IntPtr origFg = Win32.GetForegroundWindow();
         Win32.GetCursorPos(out var origCursor);
@@ -641,7 +700,7 @@ public class ActionEngine
             IntPtr wParam = Win32.MakeLParam(0, wheelDelta);
             IntPtr lParam = Win32.MakeLParam(screenX, screenY);
             Win32.PostMessage(hwnd, Win32.WM_MOUSEWHEEL, wParam, lParam);
-            await Task.Delay(80);
+            await Task.Delay(25);
             var ver = BuildVerification("message", origFg, origCursor, beforeWins);
             return ($"Scrolled (dx={dx}, dy={dy}) via WM_MOUSEWHEEL.", ver);
         }

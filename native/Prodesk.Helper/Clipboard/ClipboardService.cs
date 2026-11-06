@@ -219,35 +219,7 @@ public class ClipboardService
         var items = new List<ClipboardHistoryEntry>();
         string source = "ring_buffer";
 
-        // 1. Try Windows.ApplicationModel.DataTransfer.Clipboard.GetHistoryItemsAsync (§5.7)
-        try
-        {
-            if (global::Windows.ApplicationModel.DataTransfer.Clipboard.IsHistoryEnabled())
-            {
-                var winHistory = await global::Windows.ApplicationModel.DataTransfer.Clipboard.GetHistoryItemsAsync();
-                if (winHistory.Status == global::Windows.ApplicationModel.DataTransfer.ClipboardHistoryItemsResultStatus.Success)
-                {
-                    source = "windows_history+ring_buffer";
-                    foreach (var hItem in winHistory.Items.Take(maxItems))
-                    {
-                        if (hItem.Content.Contains(global::Windows.ApplicationModel.DataTransfer.StandardDataFormats.Text))
-                        {
-                            string t = await hItem.Content.GetTextAsync();
-                            items.Add(new ClipboardHistoryEntry
-                            {
-                                Timestamp = hItem.Timestamp.UtcDateTime.ToString("O"),
-                                Format = "text",
-                                Preview = t.Length > 500 ? t[..500] + "..." : t,
-                                Source = "windows_history"
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        catch { }
-
-        // 2. Merge Helper in-memory ring buffer
+        // 1. First add Helper in-memory ring buffer (most recent actions in current session)
         lock (_ringLock)
         {
             foreach (var r in _ringBuffer)
@@ -259,6 +231,39 @@ public class ClipboardService
                 }
             }
         }
+
+        // 2. Backfill with Windows OS clipboard history if available
+        try
+        {
+            if (global::Windows.ApplicationModel.DataTransfer.Clipboard.IsHistoryEnabled())
+            {
+                var winHistory = await global::Windows.ApplicationModel.DataTransfer.Clipboard.GetHistoryItemsAsync();
+                if (winHistory.Status == global::Windows.ApplicationModel.DataTransfer.ClipboardHistoryItemsResultStatus.Success)
+                {
+                    source = items.Count > 0 ? "ring_buffer+windows_history" : "windows_history";
+                    foreach (var hItem in winHistory.Items)
+                    {
+                        if (items.Count >= maxItems) break;
+                        if (hItem.Content.Contains(global::Windows.ApplicationModel.DataTransfer.StandardDataFormats.Text))
+                        {
+                            string t = await hItem.Content.GetTextAsync();
+                            string prev = t.Length > 500 ? t[..500] + "..." : t;
+                            if (!items.Any(i => i.Preview == prev))
+                            {
+                                items.Add(new ClipboardHistoryEntry
+                                {
+                                    Timestamp = hItem.Timestamp.UtcDateTime.ToString("O"),
+                                    Format = "text",
+                                    Preview = prev,
+                                    Source = "windows_history"
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch { }
 
         string summary = items.Count > 0
             ? string.Join("\n", items.Select((it, idx) => $"{idx + 1}. [{it.Source}] ({it.Timestamp}): {it.Preview}"))

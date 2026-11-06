@@ -6,6 +6,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using Prodesk.Helper.Input;
 using Prodesk.Helper.Native;
@@ -15,6 +17,7 @@ using Brushes = System.Windows.Media.Brushes;
 using Color = System.Windows.Media.Color;
 using FontFamily = System.Windows.Media.FontFamily;
 using Orientation = System.Windows.Controls.Orientation;
+using Path = System.IO.Path;
 
 namespace Prodesk.Helper.Ui;
 
@@ -33,7 +36,7 @@ public class HelperUiManager : IDisposable
     private System.Windows.Forms.ToolStripMenuItem? _statusItem;
     private System.Windows.Forms.ToolStripMenuItem? _autoApproveItem;
     private System.Windows.Forms.ToolStripMenuItem? _pauseItem;
-    private OverlayBorderWindow? _overlayWindow;
+    private ProdeskVisualOverlayWindow? _overlayWindow;
     private SettingsDialogWindow? _settingsWindow;
     private NativeCalculatorWindow? _calcWindow;
     private HwndSource? _hotkeyHwndSource;
@@ -53,7 +56,7 @@ public class HelperUiManager : IDisposable
     {
         CreateTrayIcon();
         RegisterEmergencyHotkey();
-        _overlayWindow = new OverlayBorderWindow();
+        _overlayWindow = new ProdeskVisualOverlayWindow();
     }
 
     private void CreateTrayIcon()
@@ -152,6 +155,7 @@ public class HelperUiManager : IDisposable
         }
 
         UpdateOverlay(null);
+        _dispatcher.BeginInvoke(() => _overlayWindow?.DismissImmediate());
         if (showBalloon)
         {
             ShowNotification("Prodesk Acil Durdurma", "Tüm eylemler duraklatıldı ve bekleyen onaylar iptal edildi.", "warning");
@@ -228,21 +232,15 @@ public class HelperUiManager : IDisposable
     {
         _dispatcher.BeginInvoke(() =>
         {
-            if (_overlayWindow == null) return;
-            if (!bounds.HasValue || bounds.Value.Width <= 0 || bounds.Value.Height <= 0)
-            {
-                _overlayWindow.Hide();
-                return;
-            }
-            var r = bounds.Value;
-            _overlayWindow.Left = r.Left;
-            _overlayWindow.Top = r.Top;
-            _overlayWindow.Width = r.Width;
-            _overlayWindow.Height = r.Height;
-            if (!_overlayWindow.IsVisible)
-            {
-                _overlayWindow.Show();
-            }
+            _overlayWindow?.UpdateTargetBounds(bounds);
+        });
+    }
+
+    public void ShowVisualAction(VisualActionState state)
+    {
+        _dispatcher.BeginInvoke(() =>
+        {
+            _overlayWindow?.ShowVisualAction(state);
         });
     }
 
@@ -333,6 +331,12 @@ public class HelperUiManager : IDisposable
         }
         catch { }
 
+        _dispatcher.BeginInvoke(() =>
+        {
+            try { _overlayWindow?.Close(); } catch { }
+            _overlayWindow = null;
+        });
+
         if (_trayIcon != null)
         {
             _trayIcon.Visible = false;
@@ -343,11 +347,36 @@ public class HelperUiManager : IDisposable
 }
 
 /// <summary>
-/// Click-through translucent border overlay shown around the target window during Tier 3 physical input (§4.1).
+/// High-performance, non-activating, click-through full-screen visual overlay (§4.1).
+/// Displays:
+/// 1. Ambient cyan/neon screen perimeter glow with breathing pulse effect.
+/// 2. Top floating Dynamic Island pill with real-time status and emergency stop shortcut (Ctrl+Alt+Shift+X).
+/// 3. Apple-style circular frosted-glass virtual cursor (visionOS/iPadOS style) with smooth gliding, click ripple waves, and drag trails.
 /// </summary>
-public class OverlayBorderWindow : Window
+public class ProdeskVisualOverlayWindow : Window
 {
-    public OverlayBorderWindow()
+    private readonly Grid _rootGrid;
+    private readonly Border _screenGlowBorder;
+    private readonly Border _hudPill;
+    private readonly TextBlock _hudTitle;
+    private readonly TextBlock _hudDetailText;
+    private readonly Border _hudPulseDot;
+    private readonly Canvas _canvas;
+    private readonly Border _targetHighlightBorder;
+    private readonly FrameworkElement _appleCursor;
+    private readonly ScaleTransform _cursorScale;
+    private readonly Border _cursorBadge;
+    private readonly TextBlock _cursorBadgeText;
+    private readonly System.Windows.Shapes.Ellipse _clickRipple;
+    private readonly ScaleTransform _rippleScale;
+    private readonly System.Windows.Shapes.Line _dragLine;
+    private readonly System.Windows.Shapes.Ellipse _dragStartDot;
+    private readonly DispatcherTimer _autoHideTimer;
+    private double _lastX = -100;
+    private double _lastY = -100;
+    private bool _isDisposed = false;
+
+    public ProdeskVisualOverlayWindow()
     {
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
@@ -357,29 +386,281 @@ public class OverlayBorderWindow : Window
         ShowInTaskbar = false;
         ShowActivated = false;
         IsHitTestVisible = false;
+        Focusable = false;
+        Opacity = 0.0;
 
-        var root = new Border
+        _rootGrid = new Grid();
+
+        // 1. Screen perimeter ambient glow
+        _screenGlowBorder = new Border
         {
-            BorderBrush = new SolidColorBrush(Color.FromRgb(14, 165, 233)),
-            BorderThickness = new Thickness(2),
-            CornerRadius = new CornerRadius(6),
-            Child = new Border
+            BorderBrush = new SolidColorBrush(Color.FromArgb(175, 14, 165, 233)),
+            BorderThickness = new Thickness(3.5),
+            CornerRadius = new CornerRadius(0),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Effect = new DropShadowEffect
             {
-                Background = new SolidColorBrush(Color.FromArgb(220, 14, 165, 233)),
-                CornerRadius = new CornerRadius(0, 0, 6, 6),
-                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Top,
-                Padding = new Thickness(10, 3, 10, 3),
-                Child = new TextBlock
+                Color = Color.FromRgb(14, 165, 233),
+                BlurRadius = 32,
+                ShadowDepth = 0,
+                Opacity = 0.85
+            }
+        };
+        var pulseAnim = new DoubleAnimation
+        {
+            From = 0.55,
+            To = 0.95,
+            Duration = TimeSpan.FromMilliseconds(1100),
+            AutoReverse = true,
+            RepeatBehavior = RepeatBehavior.Forever
+        };
+        _screenGlowBorder.BeginAnimation(UIElement.OpacityProperty, pulseAnim);
+        _rootGrid.Children.Add(_screenGlowBorder);
+
+        // 2. Target window highlight border (when bounds specified)
+        _targetHighlightBorder = new Border
+        {
+            BorderBrush = new SolidColorBrush(Color.FromArgb(220, 56, 189, 248)),
+            BorderThickness = new Thickness(2),
+            CornerRadius = new CornerRadius(8),
+            Background = new SolidColorBrush(Color.FromArgb(20, 14, 165, 233)),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Visibility = Visibility.Collapsed
+        };
+        _rootGrid.Children.Add(_targetHighlightBorder);
+
+        // 3. Top Floating Dynamic Island HUD
+        _hudPulseDot = new Border
+        {
+            Width = 9,
+            Height = 9,
+            CornerRadius = new CornerRadius(4.5),
+            Background = new SolidColorBrush(Color.FromRgb(14, 165, 233)),
+            VerticalAlignment = VerticalAlignment.Center,
+            Effect = new DropShadowEffect
+            {
+                Color = Color.FromRgb(14, 165, 233),
+                BlurRadius = 10,
+                ShadowDepth = 0,
+                Opacity = 0.9
+            }
+        };
+        var dotPulse = new DoubleAnimation
+        {
+            From = 0.5,
+            To = 1.0,
+            Duration = TimeSpan.FromMilliseconds(700),
+            AutoReverse = true,
+            RepeatBehavior = RepeatBehavior.Forever
+        };
+        _hudPulseDot.BeginAnimation(UIElement.OpacityProperty, dotPulse);
+
+        _hudTitle = new TextBlock
+        {
+            Text = "PRODESK KONTROLDE",
+            Foreground = Brushes.White,
+            FontSize = 11.5,
+            FontWeight = FontWeights.Bold,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0, 8, 0)
+        };
+
+        var sep = new TextBlock
+        {
+            Text = "•",
+            Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139)),
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0)
+        };
+
+        _hudDetailText = new TextBlock
+        {
+            Text = "Hazır",
+            Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
+            FontSize = 11.5,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 12, 0)
+        };
+
+        var stopBadge = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(220, 220, 38, 38)),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(8, 3, 10, 3),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Children =
                 {
-                    Text = "Prodesk çalışıyor",
-                    Foreground = Brushes.White,
-                    FontSize = 11,
-                    FontWeight = FontWeights.SemiBold
+                    new TextBlock
+                    {
+                        Text = "⏸ ",
+                        FontSize = 10,
+                        Foreground = Brushes.White,
+                        VerticalAlignment = VerticalAlignment.Center
+                    },
+                    new TextBlock
+                    {
+                        Text = "Durdur: Ctrl+Alt+Shift+X",
+                        FontSize = 10.5,
+                        FontWeight = FontWeights.Bold,
+                        Foreground = Brushes.White,
+                        VerticalAlignment = VerticalAlignment.Center
+                    }
                 }
             }
         };
-        Content = root;
+
+        var hudContent = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Children = { _hudPulseDot, _hudTitle, sep, _hudDetailText, stopBadge }
+        };
+
+        _hudPill = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(235, 15, 23, 42)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(140, 56, 189, 248)),
+            BorderThickness = new Thickness(1.2),
+            CornerRadius = new CornerRadius(20),
+            Padding = new Thickness(14, 6, 14, 6),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 16, 0, 0),
+            Effect = new DropShadowEffect
+            {
+                Color = Colors.Black,
+                BlurRadius = 20,
+                ShadowDepth = 4,
+                Opacity = 0.6
+            },
+            Child = hudContent
+        };
+        _rootGrid.Children.Add(_hudPill);
+
+        // 4. Interactive Canvas (Cursor, Drag Line, Ripple)
+        _canvas = new Canvas { IsHitTestVisible = false };
+
+        _dragLine = new System.Windows.Shapes.Line
+        {
+            Stroke = new SolidColorBrush(Color.FromArgb(220, 14, 165, 233)),
+            StrokeThickness = 2.5,
+            StrokeDashArray = new DoubleCollection { 4, 2 },
+            Effect = new DropShadowEffect
+            {
+                Color = Color.FromRgb(14, 165, 233),
+                BlurRadius = 8,
+                ShadowDepth = 0,
+                Opacity = 0.85
+            },
+            Visibility = Visibility.Collapsed
+        };
+        _canvas.Children.Add(_dragLine);
+
+        _dragStartDot = new System.Windows.Shapes.Ellipse
+        {
+            Width = 12,
+            Height = 12,
+            Fill = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
+            Stroke = Brushes.White,
+            StrokeThickness = 1.5,
+            Effect = new DropShadowEffect
+            {
+                Color = Colors.Black,
+                BlurRadius = 6,
+                ShadowDepth = 1,
+                Opacity = 0.4
+            },
+            Visibility = Visibility.Collapsed
+        };
+        _canvas.Children.Add(_dragStartDot);
+
+        _rippleScale = new ScaleTransform(1.0, 1.0);
+        _clickRipple = new System.Windows.Shapes.Ellipse
+        {
+            Width = 32,
+            Height = 32,
+            Stroke = new SolidColorBrush(Color.FromArgb(235, 14, 165, 233)),
+            StrokeThickness = 2.5,
+            Fill = new SolidColorBrush(Color.FromArgb(35, 14, 165, 233)),
+            RenderTransformOrigin = new System.Windows.Point(0.5, 0.5),
+            RenderTransform = _rippleScale,
+            Visibility = Visibility.Collapsed
+        };
+        _canvas.Children.Add(_clickRipple);
+
+        _cursorScale = new ScaleTransform(1.0, 1.0);
+        var cursorGrid = new Grid
+        {
+            Width = 26,
+            Height = 26,
+            RenderTransformOrigin = new System.Windows.Point(0.5, 0.5),
+            RenderTransform = _cursorScale
+        };
+
+        var outerCircle = new System.Windows.Shapes.Ellipse
+        {
+            Width = 26,
+            Height = 26,
+            Fill = new SolidColorBrush(Color.FromArgb(145, 255, 255, 255)),
+            Stroke = new SolidColorBrush(Color.FromArgb(235, 255, 255, 255)),
+            StrokeThickness = 1.5,
+            Effect = new DropShadowEffect
+            {
+                Color = Colors.Black,
+                BlurRadius = 10,
+                ShadowDepth = 2,
+                Opacity = 0.45
+            }
+        };
+
+        var innerDot = new System.Windows.Shapes.Ellipse
+        {
+            Width = 7,
+            Height = 7,
+            Fill = new SolidColorBrush(Color.FromRgb(14, 165, 233)),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        cursorGrid.Children.Add(outerCircle);
+        cursorGrid.Children.Add(innerDot);
+
+        _appleCursor = cursorGrid;
+        Canvas.SetLeft(_appleCursor, -100);
+        Canvas.SetTop(_appleCursor, -100);
+        _canvas.Children.Add(_appleCursor);
+
+        _cursorBadgeText = new TextBlock
+        {
+            FontSize = 10,
+            FontWeight = FontWeights.Bold,
+            Foreground = Brushes.White,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        _cursorBadge = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(210, 15, 23, 42)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(180, 14, 165, 233)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(6, 2, 6, 2),
+            Visibility = Visibility.Collapsed,
+            Child = _cursorBadgeText
+        };
+        Canvas.SetLeft(_cursorBadge, -100);
+        Canvas.SetTop(_cursorBadge, -100);
+        _canvas.Children.Add(_cursorBadge);
+
+        _rootGrid.Children.Add(_canvas);
+        Content = _rootGrid;
+
+        _autoHideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1300) };
+        _autoHideTimer.Tick += (_, _) => FadeOut();
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -391,6 +672,309 @@ public class OverlayBorderWindow : Window
             hwnd,
             Win32.GWL_EXSTYLE,
             exStyle | Win32.WS_EX_TRANSPARENT | Win32.WS_EX_LAYERED | Win32.WS_EX_TOOLWINDOW | Win32.WS_EX_NOACTIVATE);
+
+        ApplyVirtualScreenBounds();
+    }
+
+    private void ApplyVirtualScreenBounds()
+    {
+        int vx = Win32.GetSystemMetrics(Win32.SM_XVIRTUALSCREEN);
+        int vy = Win32.GetSystemMetrics(Win32.SM_YVIRTUALSCREEN);
+        int vw = Win32.GetSystemMetrics(Win32.SM_CXVIRTUALSCREEN);
+        int vh = Win32.GetSystemMetrics(Win32.SM_CYVIRTUALSCREEN);
+
+        var source = PresentationSource.FromVisual(this);
+        double scaleX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+        double scaleY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+        if (scaleX <= 0) scaleX = 1.0;
+        if (scaleY <= 0) scaleY = 1.0;
+
+        Left = vx / scaleX;
+        Top = vy / scaleY;
+        Width = vw / scaleX;
+        Height = vh / scaleY;
+    }
+
+    private (double X, double Y) ScreenToCanvasDip(double screenX, double screenY)
+    {
+        var source = PresentationSource.FromVisual(this);
+        double scaleX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+        double scaleY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+        if (scaleX <= 0) scaleX = 1.0;
+        if (scaleY <= 0) scaleY = 1.0;
+
+        int vx = Win32.GetSystemMetrics(Win32.SM_XVIRTUALSCREEN);
+        int vy = Win32.GetSystemMetrics(Win32.SM_YVIRTUALSCREEN);
+
+        return ((screenX - vx) / scaleX, (screenY - vy) / scaleY);
+    }
+
+    public void ShowVisualAction(VisualActionState state)
+    {
+        if (_isDisposed) return;
+        EnsureVisible();
+
+        _hudDetailText.Text = state.Description;
+
+        var (targetX, targetY) = ScreenToCanvasDip(state.X, state.Y);
+
+        switch (state.Type)
+        {
+            case "click":
+                AnimateCursorTo(targetX, targetY, 100);
+                PlayClickTactile(targetX, targetY);
+                HideDragElements();
+                _cursorBadge.Visibility = Visibility.Collapsed;
+                break;
+
+            case "type":
+                AnimateCursorTo(targetX, targetY, 80);
+                HideDragElements();
+                _cursorBadgeText.Text = "⌨ Metin";
+                Canvas.SetLeft(_cursorBadge, targetX + 16);
+                Canvas.SetTop(_cursorBadge, targetY - 14);
+                _cursorBadge.Visibility = Visibility.Visible;
+                break;
+
+            case "key":
+                _cursorBadgeText.Text = "⌨ Tuş";
+                if (_lastX > 0 && _lastY > 0)
+                {
+                    Canvas.SetLeft(_cursorBadge, _lastX + 16);
+                    Canvas.SetTop(_cursorBadge, _lastY - 14);
+                    _cursorBadge.Visibility = Visibility.Visible;
+                }
+                HideDragElements();
+                break;
+
+            case "drag":
+                if (state.FromX.HasValue && state.FromY.HasValue && state.ToX.HasValue && state.ToY.HasValue)
+                {
+                    var (fromDipX, fromDipY) = ScreenToCanvasDip(state.FromX.Value, state.FromY.Value);
+                    var (toDipX, toDipY) = ScreenToCanvasDip(state.ToX.Value, state.ToY.Value);
+
+                    _dragStartDot.Visibility = Visibility.Visible;
+                    Canvas.SetLeft(_dragStartDot, fromDipX - 6);
+                    Canvas.SetTop(_dragStartDot, fromDipY - 6);
+
+                    _dragLine.X1 = fromDipX;
+                    _dragLine.Y1 = fromDipY;
+                    _dragLine.X2 = toDipX;
+                    _dragLine.Y2 = toDipY;
+                    _dragLine.Visibility = Visibility.Visible;
+
+                    Canvas.SetLeft(_appleCursor, fromDipX - 13);
+                    Canvas.SetTop(_appleCursor, fromDipY - 13);
+                    _lastX = fromDipX;
+                    _lastY = fromDipY;
+
+                    int dur = Math.Clamp(state.DurationMs, 100, 450);
+                    AnimateCursorTo(toDipX, toDipY, dur);
+
+                    _cursorBadgeText.Text = "↔ Sürükle";
+                    Canvas.SetLeft(_cursorBadge, toDipX + 16);
+                    Canvas.SetTop(_cursorBadge, toDipY - 14);
+                    _cursorBadge.Visibility = Visibility.Visible;
+                }
+                break;
+
+            case "scroll":
+                AnimateCursorTo(targetX, targetY, 80);
+                HideDragElements();
+                _cursorBadgeText.Text = "⇅ Kaydır";
+                Canvas.SetLeft(_cursorBadge, targetX + 16);
+                Canvas.SetTop(_cursorBadge, targetY - 14);
+                _cursorBadge.Visibility = Visibility.Visible;
+                break;
+
+            case "hover":
+            case "move":
+            default:
+                AnimateCursorTo(targetX, targetY, 120);
+                HideDragElements();
+                _cursorBadge.Visibility = Visibility.Collapsed;
+                break;
+        }
+
+        RestartAutoHideTimer();
+    }
+
+    private void AnimateCursorTo(double dipX, double dipY, int durationMs = 120)
+    {
+        double destLeft = dipX - 13;
+        double destTop = dipY - 13;
+
+        if (_lastX < 0 || _lastY < 0)
+        {
+            Canvas.SetLeft(_appleCursor, destLeft);
+            Canvas.SetTop(_appleCursor, destTop);
+            _lastX = dipX;
+            _lastY = dipY;
+            return;
+        }
+
+        double dx = dipX - _lastX;
+        double dy = dipY - _lastY;
+        double dist = Math.Sqrt(dx * dx + dy * dy);
+
+        if (dist > 1800 || durationMs <= 20)
+        {
+            Canvas.SetLeft(_appleCursor, destLeft);
+            Canvas.SetTop(_appleCursor, destTop);
+        }
+        else
+        {
+            var animLeft = new DoubleAnimation
+            {
+                To = destLeft,
+                Duration = TimeSpan.FromMilliseconds(durationMs),
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+            };
+            var animTop = new DoubleAnimation
+            {
+                To = destTop,
+                Duration = TimeSpan.FromMilliseconds(durationMs),
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+            };
+
+            _appleCursor.BeginAnimation(Canvas.LeftProperty, animLeft);
+            _appleCursor.BeginAnimation(Canvas.TopProperty, animTop);
+        }
+
+        _lastX = dipX;
+        _lastY = dipY;
+    }
+
+    private void PlayClickTactile(double dipX, double dipY)
+    {
+        var squeezeAnim = new DoubleAnimation
+        {
+            To = 0.82,
+            Duration = TimeSpan.FromMilliseconds(70),
+            AutoReverse = true,
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseInOut }
+        };
+        _cursorScale.BeginAnimation(ScaleTransform.ScaleXProperty, squeezeAnim);
+        _cursorScale.BeginAnimation(ScaleTransform.ScaleYProperty, squeezeAnim);
+
+        Canvas.SetLeft(_clickRipple, dipX - 16);
+        Canvas.SetTop(_clickRipple, dipY - 16);
+        _clickRipple.Visibility = Visibility.Visible;
+        _clickRipple.Opacity = 0.95;
+
+        var rippleScaleAnim = new DoubleAnimation
+        {
+            From = 1.0,
+            To = 2.4,
+            Duration = TimeSpan.FromMilliseconds(350),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+        var rippleFadeAnim = new DoubleAnimation
+        {
+            From = 0.95,
+            To = 0.0,
+            Duration = TimeSpan.FromMilliseconds(350)
+        };
+        rippleFadeAnim.Completed += (_, _) =>
+        {
+            _clickRipple.Visibility = Visibility.Collapsed;
+        };
+
+        _rippleScale.BeginAnimation(ScaleTransform.ScaleXProperty, rippleScaleAnim);
+        _rippleScale.BeginAnimation(ScaleTransform.ScaleYProperty, rippleScaleAnim);
+        _clickRipple.BeginAnimation(UIElement.OpacityProperty, rippleFadeAnim);
+    }
+
+    public void UpdateTargetBounds(Win32.RECT? bounds)
+    {
+        if (_isDisposed) return;
+        if (!bounds.HasValue || bounds.Value.Width <= 0 || bounds.Value.Height <= 0)
+        {
+            _targetHighlightBorder.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var r = bounds.Value;
+        var (x, y) = ScreenToCanvasDip(r.Left, r.Top);
+        var source = PresentationSource.FromVisual(this);
+        double scaleX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+        double scaleY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+        if (scaleX <= 0) scaleX = 1.0;
+        if (scaleY <= 0) scaleY = 1.0;
+
+        _targetHighlightBorder.Margin = new Thickness(x, y, 0, 0);
+        _targetHighlightBorder.Width = r.Width / scaleX;
+        _targetHighlightBorder.Height = r.Height / scaleY;
+        _targetHighlightBorder.Visibility = Visibility.Visible;
+
+        EnsureVisible();
+        RestartAutoHideTimer();
+    }
+
+    private void EnsureVisible()
+    {
+        if (!IsVisible) Show();
+        if (Opacity < 0.99)
+        {
+            var fadeIn = new DoubleAnimation
+            {
+                To = 1.0,
+                Duration = TimeSpan.FromMilliseconds(120),
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+            };
+            BeginAnimation(UIElement.OpacityProperty, fadeIn);
+        }
+    }
+
+    private void FadeOut()
+    {
+        _autoHideTimer.Stop();
+        var fadeOut = new DoubleAnimation
+        {
+            To = 0.0,
+            Duration = TimeSpan.FromMilliseconds(300),
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn }
+        };
+        fadeOut.Completed += (_, _) =>
+        {
+            HideDragElements();
+            _targetHighlightBorder.Visibility = Visibility.Collapsed;
+            _cursorBadge.Visibility = Visibility.Collapsed;
+            _lastX = -100;
+            _lastY = -100;
+        };
+        BeginAnimation(UIElement.OpacityProperty, fadeOut);
+    }
+
+    public void DismissImmediate()
+    {
+        _autoHideTimer.Stop();
+        BeginAnimation(UIElement.OpacityProperty, null);
+        Opacity = 0.0;
+        HideDragElements();
+        _targetHighlightBorder.Visibility = Visibility.Collapsed;
+        _cursorBadge.Visibility = Visibility.Collapsed;
+        _lastX = -100;
+        _lastY = -100;
+    }
+
+    private void HideDragElements()
+    {
+        _dragLine.Visibility = Visibility.Collapsed;
+        _dragStartDot.Visibility = Visibility.Collapsed;
+    }
+
+    private void RestartAutoHideTimer()
+    {
+        _autoHideTimer.Stop();
+        _autoHideTimer.Start();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _isDisposed = true;
+        _autoHideTimer.Stop();
+        base.OnClosed(e);
     }
 }
 

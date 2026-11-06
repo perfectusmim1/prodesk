@@ -74,6 +74,7 @@ public static class Program
         var recorder = new RecordingEngine(capture, dataDir);
 
         action.OnOverlayUpdate = bounds => ui.UpdateOverlay(bounds);
+        action.OnVisualAction = state => ui.ShowVisualAction(state);
         action.OnEmergencyStopTriggered = () => ui.TriggerEmergencyStop(showBalloon: true);
 
         using var pipeServer = new PipeServer(

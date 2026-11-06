@@ -32,7 +32,7 @@ public class HelperSettings
     public int WritesPerMinute { get; set; } = 120;
 
     [JsonPropertyName("waitForUserIdleMs")]
-    public int WaitForUserIdleMs { get; set; } = 1500;
+    public int WaitForUserIdleMs { get; set; } = 0;
 
     [JsonPropertyName("keepHelperAlive")]
     public bool KeepHelperAlive { get; set; } = false;

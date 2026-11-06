@@ -729,6 +729,14 @@ public class PipeServer : IDisposable
             {
                 var target = await ResolveActionTargetFromParamsAsync(p);
                 int dur = GetInt(p, "duration_ms") ?? 150;
+                _action.OnVisualAction?.Invoke(new VisualActionState
+                {
+                    Type = "hover",
+                    X = target.ScreenX,
+                    Y = target.ScreenY,
+                    Description = $"Vurgulanıyor: ({target.ScreenX}, {target.ScreenY})",
+                    DurationMs = dur
+                });
                 Win32.GetCursorPos(out var orig);
                 Win32.SetCursorPos(target.ScreenX, target.ScreenY);
                 if (dur > 0) await Task.Delay(dur);
@@ -740,6 +748,13 @@ public class PipeServer : IDisposable
             {
                 int x = GetInt(p, "x") ?? 0;
                 int y = GetInt(p, "y") ?? 0;
+                _action.OnVisualAction?.Invoke(new VisualActionState
+                {
+                    Type = "move",
+                    X = x,
+                    Y = y,
+                    Description = $"İmleç taşınıyor: ({x}, {y})"
+                });
                 Win32.SetCursorPos(x, y);
                 return new { text = $"Moved cursor to ({x},{y}).", data = new { x, y } };
             }
