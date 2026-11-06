@@ -1,0 +1,10 @@
+node_modules/
+packages/server/dist/
+native/**/bin/
+native/**/obj/
+*.log
+*.bak-prodesk-*
+.env
+.env.*
+.task_checklist.md
+tmp/

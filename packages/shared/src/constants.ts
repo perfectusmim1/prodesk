@@ -1,0 +1,9 @@
+export const PRODESK_VERSION = '1.0.0';
+export const DEFAULT_TIMEOUT_MS = 30_000;
+export const MAX_SCREENSHOT_WIDTH = 1280;
+export const DEFAULT_JPEG_QUALITY = 80;
+export const MAX_OUTPUT_CHARS = 30_000;
+export const PROWSER_PORT_BASE = 17890;
+export const PROWSER_PORT_COUNT = 10;
+export const DEFAULT_WRITES_PER_MINUTE = 120;
+export const DEFAULT_USER_IDLE_MS = 1500;

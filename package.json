@@ -1,0 +1,31 @@
+{
+  "name": "prodesk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Computer use for Windows: see, understand and control desktop apps in the background via UI Automation, OCR and safe input — with confirmations, auto-approve, kill switch and Prowser handoff.",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:e2e": "node scripts/e2e/run-all.mjs",
+    "install:local": "node scripts/install.mjs",
+    "uninstall:local": "node scripts/uninstall.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "jsonc-parser": "^3.3.1",
+    "ws": "^8.22.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/ws": "^8.18.2",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "prodesk",
+  "displayName": "Prodesk",
+  "version": "1.0.0",
+  "description": "Computer use for Windows: see, understand and control desktop apps in the background via UI Automation, OCR and safe input — with confirmations, auto-approve, kill switch and Prowser handoff.",
+  "author": { "name": "perfectusmim1", "url": "https://github.com/perfectusmim1" },
+  "repository": "https://github.com/perfectusmim1/prodesk",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "Not Defteri'ni arka planda aç, bir alışveriş listesi yaz ve Masaüstü'ne kaydet",
+    "winget ile 7-Zip'i ara ve sistem bilgilerini raporla",
+    "Ekranımdaki açık pencereleri listele ve İndirilenler klasörünü incele"
+  ]
+}
