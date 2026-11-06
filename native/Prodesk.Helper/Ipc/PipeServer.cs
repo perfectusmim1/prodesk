@@ -729,33 +729,26 @@ public class PipeServer : IDisposable
             {
                 var target = await ResolveActionTargetFromParamsAsync(p);
                 int dur = GetInt(p, "duration_ms") ?? 150;
-                _action.OnVisualAction?.Invoke(new VisualActionState
+                if (target.TargetHwnd != IntPtr.Zero && Win32.GetForegroundWindow() != target.TargetHwnd)
                 {
-                    Type = "hover",
-                    X = target.ScreenX,
-                    Y = target.ScreenY,
-                    Description = $"Vurgulanıyor: ({target.ScreenX}, {target.ScreenY})",
-                    DurationMs = dur
-                });
+                    ActionEngine.BringWindowToFrontInternal(target.TargetHwnd);
+                    await Task.Delay(30);
+                }
                 Win32.GetCursorPos(out var orig);
-                Win32.SetCursorPos(target.ScreenX, target.ScreenY);
+                await _action.SmoothGlideCursorAsync(target.ScreenX, target.ScreenY, 75, $"Üzerine geliniyor: ({target.ScreenX}, {target.ScreenY})");
                 if (dur > 0) await Task.Delay(dur);
-                Win32.SetCursorPos(orig.X, orig.Y);
-                return new { text = $"Hovered at ({target.ScreenX},{target.ScreenY}) for {dur} ms and restored cursor." };
+                if (_policy.Settings.RestoreCursorAfterAction)
+                {
+                    Win32.SetCursorPos(orig.X, orig.Y);
+                }
+                return new { text = $"Hovered at ({target.ScreenX},{target.ScreenY}) for {dur} ms." };
             }
 
             case "mouse_move":
             {
                 int x = GetInt(p, "x") ?? 0;
                 int y = GetInt(p, "y") ?? 0;
-                _action.OnVisualAction?.Invoke(new VisualActionState
-                {
-                    Type = "move",
-                    X = x,
-                    Y = y,
-                    Description = $"İmleç taşınıyor: ({x}, {y})"
-                });
-                Win32.SetCursorPos(x, y);
+                await _action.SmoothGlideCursorAsync(x, y, 75, $"İmleç: ({x}, {y})");
                 return new { text = $"Moved cursor to ({x},{y}).", data = new { x, y } };
             }
 
@@ -1031,6 +1024,14 @@ public class PipeServer : IDisposable
                 string winQuery = GetStr(p, "window") ?? throw new HelperErrorException("bad_request", "window gerekli.");
                 var win = _uia.ResolveWindow(winQuery) ?? throw new HelperErrorException("not_found", $"Pencere bulunamadı: {winQuery}");
                 ActionEngine.BringWindowToFrontInternal(win.Hwnd);
+                Win32.GetCursorPos(out var curPt);
+                _ui.ShowVisualAction(new VisualActionState
+                {
+                    Type = "move",
+                    X = curPt.X,
+                    Y = curPt.Y,
+                    Description = $"Pencere odaklandı: {win.Title}"
+                });
                 return new { text = $"Focused window [{win.Wid}] \"{win.Title}\".", data = new { wid = win.Wid, title = win.Title } };
             }
 

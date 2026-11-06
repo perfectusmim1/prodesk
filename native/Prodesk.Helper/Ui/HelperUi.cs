@@ -349,26 +349,28 @@ public class HelperUiManager : IDisposable
 /// <summary>
 /// High-performance, non-activating, click-through full-screen visual overlay (§4.1).
 /// Displays:
-/// 1. Ambient cyan/neon screen perimeter glow with breathing pulse effect.
-/// 2. Top floating Dynamic Island pill with real-time status and emergency stop shortcut (Ctrl+Alt+Shift+X).
-/// 3. Apple-style circular frosted-glass virtual cursor (visionOS/iPadOS style) with smooth gliding, click ripple waves, and drag trails.
+/// 1. Feather-soft inward gradient light diffusion (Siri / Apple Intelligence style) along screen edges & corners — zero lines or borders.
+/// 2. Top floating glassmorphic Dynamic Island pill with real-time status and emergency stop shortcut (Ctrl+Alt+Shift+X).
+/// 3. Apple-style circular frosted-glass virtual cursor (visionOS/iPadOS style) with smooth gliding, motion trail, dual-ring click ripple waves, and drag trails.
 /// </summary>
 public class ProdeskVisualOverlayWindow : Window
 {
     private readonly Grid _rootGrid;
-    private readonly Border _screenGlowBorder;
+    private readonly Grid _ambientAuraLayer;
     private readonly Border _hudPill;
     private readonly TextBlock _hudTitle;
     private readonly TextBlock _hudDetailText;
     private readonly Border _hudPulseDot;
     private readonly Canvas _canvas;
-    private readonly Border _targetHighlightBorder;
     private readonly FrameworkElement _appleCursor;
     private readonly ScaleTransform _cursorScale;
     private readonly Border _cursorBadge;
     private readonly TextBlock _cursorBadgeText;
     private readonly System.Windows.Shapes.Ellipse _clickRipple;
     private readonly ScaleTransform _rippleScale;
+    private readonly System.Windows.Shapes.Ellipse _clickRippleOuter;
+    private readonly ScaleTransform _rippleOuterScale;
+    private readonly System.Windows.Shapes.Line _motionTrailLine;
     private readonly System.Windows.Shapes.Line _dragLine;
     private readonly System.Windows.Shapes.Ellipse _dragStartDot;
     private readonly DispatcherTimer _autoHideTimer;
@@ -391,95 +393,74 @@ public class ProdeskVisualOverlayWindow : Window
 
         _rootGrid = new Grid();
 
-        // 1. Screen perimeter ambient glow
-        _screenGlowBorder = new Border
+        // 1. Feather-Soft Inward Ambient Light Diffusion (Zero Borders, Zero Lines, Pure Gradient Falloff)
+        _ambientAuraLayer = CreateAmbientLightDiffusionLayer();
+        var breathAnim = new DoubleAnimation
         {
-            BorderBrush = new SolidColorBrush(Color.FromArgb(175, 14, 165, 233)),
-            BorderThickness = new Thickness(3.5),
-            CornerRadius = new CornerRadius(0),
-            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Stretch,
-            Effect = new DropShadowEffect
-            {
-                Color = Color.FromRgb(14, 165, 233),
-                BlurRadius = 32,
-                ShadowDepth = 0,
-                Opacity = 0.85
-            }
-        };
-        var pulseAnim = new DoubleAnimation
-        {
-            From = 0.55,
-            To = 0.95,
-            Duration = TimeSpan.FromMilliseconds(1100),
+            From = 0.65,
+            To = 1.0,
+            Duration = TimeSpan.FromMilliseconds(1800),
             AutoReverse = true,
-            RepeatBehavior = RepeatBehavior.Forever
+            RepeatBehavior = RepeatBehavior.Forever,
+            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
         };
-        _screenGlowBorder.BeginAnimation(UIElement.OpacityProperty, pulseAnim);
-        _rootGrid.Children.Add(_screenGlowBorder);
+        _ambientAuraLayer.BeginAnimation(UIElement.OpacityProperty, breathAnim);
+        _rootGrid.Children.Add(_ambientAuraLayer);
 
-        // 2. Target window highlight border (when bounds specified)
-        _targetHighlightBorder = new Border
-        {
-            BorderBrush = new SolidColorBrush(Color.FromArgb(220, 56, 189, 248)),
-            BorderThickness = new Thickness(2),
-            CornerRadius = new CornerRadius(8),
-            Background = new SolidColorBrush(Color.FromArgb(20, 14, 165, 233)),
-            HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
-            VerticalAlignment = VerticalAlignment.Top,
-            Visibility = Visibility.Collapsed
-        };
-        _rootGrid.Children.Add(_targetHighlightBorder);
-
-        // 3. Top Floating Dynamic Island HUD
+        // 2. Top Floating Glassmorphic Dynamic Island HUD
         _hudPulseDot = new Border
         {
-            Width = 9,
-            Height = 9,
-            CornerRadius = new CornerRadius(4.5),
-            Background = new SolidColorBrush(Color.FromRgb(14, 165, 233)),
+            Width = 8,
+            Height = 8,
+            CornerRadius = new CornerRadius(4),
+            Background = new LinearGradientBrush(
+                Color.FromRgb(56, 189, 248),
+                Color.FromRgb(168, 85, 247),
+                45.0),
             VerticalAlignment = VerticalAlignment.Center,
             Effect = new DropShadowEffect
             {
-                Color = Color.FromRgb(14, 165, 233),
-                BlurRadius = 10,
+                Color = Color.FromRgb(56, 189, 248),
+                BlurRadius = 12,
                 ShadowDepth = 0,
-                Opacity = 0.9
+                Opacity = 0.95
             }
         };
         var dotPulse = new DoubleAnimation
         {
-            From = 0.5,
+            From = 0.45,
             To = 1.0,
-            Duration = TimeSpan.FromMilliseconds(700),
+            Duration = TimeSpan.FromMilliseconds(850),
             AutoReverse = true,
-            RepeatBehavior = RepeatBehavior.Forever
+            RepeatBehavior = RepeatBehavior.Forever,
+            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
         };
         _hudPulseDot.BeginAnimation(UIElement.OpacityProperty, dotPulse);
 
         _hudTitle = new TextBlock
         {
-            Text = "PRODESK KONTROLDE",
+            Text = "Prodesk",
             Foreground = Brushes.White,
             FontSize = 11.5,
-            FontWeight = FontWeights.Bold,
+            FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(8, 0, 8, 0)
+            Margin = new Thickness(8, 0, 6, 0)
         };
 
         var sep = new TextBlock
         {
-            Text = "•",
-            Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139)),
-            FontSize = 12,
+            Text = "·",
+            Foreground = new SolidColorBrush(Color.FromArgb(140, 148, 163, 184)),
+            FontSize = 13,
+            FontWeight = FontWeights.Bold,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 8, 0)
+            Margin = new Thickness(0, 0, 6, 0)
         };
 
         _hudDetailText = new TextBlock
         {
             Text = "Hazır",
-            Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
+            Foreground = new SolidColorBrush(Color.FromArgb(230, 226, 232, 240)),
             FontSize = 11.5,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 12, 0)
@@ -487,9 +468,11 @@ public class ProdeskVisualOverlayWindow : Window
 
         var stopBadge = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(220, 220, 38, 38)),
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(8, 3, 10, 3),
+            Background = new SolidColorBrush(Color.FromArgb(45, 244, 63, 94)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(90, 251, 113, 133)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(11),
+            Padding = new Thickness(8, 2, 9, 2),
             VerticalAlignment = VerticalAlignment.Center,
             Child = new StackPanel
             {
@@ -499,16 +482,16 @@ public class ProdeskVisualOverlayWindow : Window
                     new TextBlock
                     {
                         Text = "⏸ ",
-                        FontSize = 10,
-                        Foreground = Brushes.White,
+                        FontSize = 9.5,
+                        Foreground = new SolidColorBrush(Color.FromRgb(253, 164, 175)),
                         VerticalAlignment = VerticalAlignment.Center
                     },
                     new TextBlock
                     {
-                        Text = "Durdur: Ctrl+Alt+Shift+X",
-                        FontSize = 10.5,
-                        FontWeight = FontWeights.Bold,
-                        Foreground = Brushes.White,
+                        Text = "Durdur · Ctrl+Alt+Shift+X",
+                        FontSize = 10,
+                        FontWeight = FontWeights.Medium,
+                        Foreground = new SolidColorBrush(Color.FromRgb(254, 205, 211)),
                         VerticalAlignment = VerticalAlignment.Center
                     }
                 }
@@ -523,70 +506,94 @@ public class ProdeskVisualOverlayWindow : Window
 
         _hudPill = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(235, 15, 23, 42)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(140, 56, 189, 248)),
-            BorderThickness = new Thickness(1.2),
-            CornerRadius = new CornerRadius(20),
-            Padding = new Thickness(14, 6, 14, 6),
+            Background = new SolidColorBrush(Color.FromArgb(232, 9, 13, 22)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(22),
+            Padding = new Thickness(14, 6, 10, 6),
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0, 16, 0, 0),
+            Margin = new Thickness(0, 14, 0, 0),
             Effect = new DropShadowEffect
             {
                 Color = Colors.Black,
-                BlurRadius = 20,
-                ShadowDepth = 4,
-                Opacity = 0.6
+                BlurRadius = 28,
+                ShadowDepth = 6,
+                Opacity = 0.55
             },
             Child = hudContent
         };
         _rootGrid.Children.Add(_hudPill);
 
-        // 4. Interactive Canvas (Cursor, Drag Line, Ripple)
+        // 3. Interactive Canvas (Motion Trail, Drag Line, Dual-Ring Click Ripple, Apple Frosted Pointer)
         _canvas = new Canvas { IsHitTestVisible = false };
+
+        var trailBrush = new LinearGradientBrush
+        {
+            StartPoint = new System.Windows.Point(0, 0),
+            EndPoint = new System.Windows.Point(1, 1)
+        };
+        trailBrush.GradientStops.Add(new GradientStop(Color.FromArgb(0, 56, 189, 248), 0.0));
+        trailBrush.GradientStops.Add(new GradientStop(Color.FromArgb(140, 129, 140, 248), 0.6));
+        trailBrush.GradientStops.Add(new GradientStop(Color.FromArgb(210, 56, 189, 248), 1.0));
+
+        _motionTrailLine = new System.Windows.Shapes.Line
+        {
+            Stroke = trailBrush,
+            StrokeThickness = 3.0,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            Opacity = 0.0,
+            Visibility = Visibility.Collapsed
+        };
+        _canvas.Children.Add(_motionTrailLine);
 
         _dragLine = new System.Windows.Shapes.Line
         {
-            Stroke = new SolidColorBrush(Color.FromArgb(220, 14, 165, 233)),
-            StrokeThickness = 2.5,
-            StrokeDashArray = new DoubleCollection { 4, 2 },
-            Effect = new DropShadowEffect
-            {
-                Color = Color.FromRgb(14, 165, 233),
-                BlurRadius = 8,
-                ShadowDepth = 0,
-                Opacity = 0.85
-            },
+            Stroke = new SolidColorBrush(Color.FromArgb(190, 56, 189, 248)),
+            StrokeThickness = 2.0,
+            StrokeDashArray = new DoubleCollection { 4, 3 },
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
             Visibility = Visibility.Collapsed
         };
         _canvas.Children.Add(_dragLine);
 
         _dragStartDot = new System.Windows.Shapes.Ellipse
         {
-            Width = 12,
-            Height = 12,
-            Fill = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
+            Width = 10,
+            Height = 10,
+            Fill = new SolidColorBrush(Color.FromArgb(220, 56, 189, 248)),
             Stroke = Brushes.White,
             StrokeThickness = 1.5,
-            Effect = new DropShadowEffect
-            {
-                Color = Colors.Black,
-                BlurRadius = 6,
-                ShadowDepth = 1,
-                Opacity = 0.4
-            },
             Visibility = Visibility.Collapsed
         };
         _canvas.Children.Add(_dragStartDot);
 
+        _rippleOuterScale = new ScaleTransform(1.0, 1.0);
+        _clickRippleOuter = new System.Windows.Shapes.Ellipse
+        {
+            Width = 28,
+            Height = 28,
+            Stroke = new SolidColorBrush(Color.FromArgb(160, 168, 85, 247)),
+            StrokeThickness = 1.5,
+            Fill = Brushes.Transparent,
+            RenderTransformOrigin = new System.Windows.Point(0.5, 0.5),
+            RenderTransform = _rippleOuterScale,
+            Visibility = Visibility.Collapsed
+        };
+        _canvas.Children.Add(_clickRippleOuter);
+
         _rippleScale = new ScaleTransform(1.0, 1.0);
         _clickRipple = new System.Windows.Shapes.Ellipse
         {
-            Width = 32,
-            Height = 32,
-            Stroke = new SolidColorBrush(Color.FromArgb(235, 14, 165, 233)),
-            StrokeThickness = 2.5,
-            Fill = new SolidColorBrush(Color.FromArgb(35, 14, 165, 233)),
+            Width = 24,
+            Height = 24,
+            Stroke = new SolidColorBrush(Color.FromArgb(220, 56, 189, 248)),
+            StrokeThickness = 2.0,
+            Fill = new RadialGradientBrush(
+                Color.FromArgb(65, 56, 189, 248),
+                Color.FromArgb(0, 56, 189, 248)),
             RenderTransformOrigin = new System.Windows.Point(0.5, 0.5),
             RenderTransform = _rippleScale,
             Visibility = Visibility.Collapsed
@@ -596,38 +603,43 @@ public class ProdeskVisualOverlayWindow : Window
         _cursorScale = new ScaleTransform(1.0, 1.0);
         var cursorGrid = new Grid
         {
-            Width = 26,
-            Height = 26,
+            Width = 22,
+            Height = 22,
             RenderTransformOrigin = new System.Windows.Point(0.5, 0.5),
             RenderTransform = _cursorScale
         };
 
-        var outerCircle = new System.Windows.Shapes.Ellipse
+        var cursorHalo = new System.Windows.Shapes.Ellipse
         {
-            Width = 26,
-            Height = 26,
-            Fill = new SolidColorBrush(Color.FromArgb(145, 255, 255, 255)),
+            Width = 22,
+            Height = 22,
+            Fill = new RadialGradientBrush(
+                Color.FromArgb(155, 255, 255, 255),
+                Color.FromArgb(85, 226, 232, 240)),
             Stroke = new SolidColorBrush(Color.FromArgb(235, 255, 255, 255)),
-            StrokeThickness = 1.5,
+            StrokeThickness = 1.4,
             Effect = new DropShadowEffect
             {
-                Color = Colors.Black,
-                BlurRadius = 10,
+                Color = Color.FromRgb(15, 23, 42),
+                BlurRadius = 12,
                 ShadowDepth = 2,
-                Opacity = 0.45
+                Opacity = 0.42
             }
         };
 
         var innerDot = new System.Windows.Shapes.Ellipse
         {
-            Width = 7,
-            Height = 7,
-            Fill = new SolidColorBrush(Color.FromRgb(14, 165, 233)),
+            Width = 6,
+            Height = 6,
+            Fill = new LinearGradientBrush(
+                Color.FromRgb(56, 189, 248),
+                Color.FromRgb(129, 140, 248),
+                45.0),
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        cursorGrid.Children.Add(outerCircle);
+        cursorGrid.Children.Add(cursorHalo);
         cursorGrid.Children.Add(innerDot);
 
         _appleCursor = cursorGrid;
@@ -638,18 +650,25 @@ public class ProdeskVisualOverlayWindow : Window
         _cursorBadgeText = new TextBlock
         {
             FontSize = 10,
-            FontWeight = FontWeights.Bold,
+            FontWeight = FontWeights.SemiBold,
             Foreground = Brushes.White,
             VerticalAlignment = VerticalAlignment.Center
         };
         _cursorBadge = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(210, 15, 23, 42)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(180, 14, 165, 233)),
+            Background = new SolidColorBrush(Color.FromArgb(220, 9, 13, 22)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(55, 255, 255, 255)),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(6, 2, 6, 2),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(7, 2.5, 7, 2.5),
             Visibility = Visibility.Collapsed,
+            Effect = new DropShadowEffect
+            {
+                Color = Colors.Black,
+                BlurRadius = 10,
+                ShadowDepth = 2,
+                Opacity = 0.4
+            },
             Child = _cursorBadgeText
         };
         Canvas.SetLeft(_cursorBadge, -100);
@@ -659,8 +678,99 @@ public class ProdeskVisualOverlayWindow : Window
         _rootGrid.Children.Add(_canvas);
         Content = _rootGrid;
 
-        _autoHideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1300) };
+        _autoHideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(5500) };
         _autoHideTimer.Tick += (_, _) => FadeOut();
+    }
+
+    private static Grid CreateAmbientLightDiffusionLayer()
+    {
+        var layer = new Grid { IsHitTestVisible = false };
+
+        // Soft inward fade helper (0.0 = screen edge, 1.0 = fully transparent inside)
+        static LinearGradientBrush CreateEdgeFade(System.Windows.Point start, System.Windows.Point end, Color edgeColor, Color midColor)
+        {
+            var brush = new LinearGradientBrush { StartPoint = start, EndPoint = end };
+            brush.GradientStops.Add(new GradientStop(Color.FromArgb(82, edgeColor.R, edgeColor.G, edgeColor.B), 0.0));
+            brush.GradientStops.Add(new GradientStop(Color.FromArgb(42, midColor.R, midColor.G, midColor.B), 0.32));
+            brush.GradientStops.Add(new GradientStop(Color.FromArgb(14, midColor.R, midColor.G, midColor.B), 0.68));
+            brush.GradientStops.Add(new GradientStop(Color.FromArgb(0, midColor.R, midColor.G, midColor.B), 1.0));
+            return brush;
+        }
+
+        var cyan = Color.FromRgb(56, 189, 248);
+        var indigo = Color.FromRgb(129, 140, 248);
+        var violet = Color.FromRgb(192, 132, 252);
+
+        // Top soft light diffusion
+        layer.Children.Add(new System.Windows.Shapes.Rectangle
+        {
+            Height = 95,
+            VerticalAlignment = VerticalAlignment.Top,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+            Fill = CreateEdgeFade(new System.Windows.Point(0.5, 0.0), new System.Windows.Point(0.5, 1.0), cyan, indigo)
+        });
+
+        // Bottom soft light diffusion
+        layer.Children.Add(new System.Windows.Shapes.Rectangle
+        {
+            Height = 95,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+            Fill = CreateEdgeFade(new System.Windows.Point(0.5, 1.0), new System.Windows.Point(0.5, 0.0), indigo, violet)
+        });
+
+        // Left soft light diffusion
+        layer.Children.Add(new System.Windows.Shapes.Rectangle
+        {
+            Width = 95,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Fill = CreateEdgeFade(new System.Windows.Point(0.0, 0.5), new System.Windows.Point(1.0, 0.5), cyan, indigo)
+        });
+
+        // Right soft light diffusion
+        layer.Children.Add(new System.Windows.Shapes.Rectangle
+        {
+            Width = 95,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Fill = CreateEdgeFade(new System.Windows.Point(1.0, 0.5), new System.Windows.Point(0.0, 0.5), violet, indigo)
+        });
+
+        // 4 Corner radial ambient blooms for seamless organic light wrap
+        static System.Windows.Shapes.Rectangle CreateCornerBloom(
+            System.Windows.HorizontalAlignment hAlign,
+            VerticalAlignment vAlign,
+            System.Windows.Point center,
+            Color coreColor)
+        {
+            var radial = new RadialGradientBrush
+            {
+                Center = center,
+                GradientOrigin = center,
+                RadiusX = 0.85,
+                RadiusY = 0.85
+            };
+            radial.GradientStops.Add(new GradientStop(Color.FromArgb(75, coreColor.R, coreColor.G, coreColor.B), 0.0));
+            radial.GradientStops.Add(new GradientStop(Color.FromArgb(30, coreColor.R, coreColor.G, coreColor.B), 0.45));
+            radial.GradientStops.Add(new GradientStop(Color.FromArgb(0, coreColor.R, coreColor.G, coreColor.B), 1.0));
+
+            return new System.Windows.Shapes.Rectangle
+            {
+                Width = 260,
+                Height = 260,
+                HorizontalAlignment = hAlign,
+                VerticalAlignment = vAlign,
+                Fill = radial
+            };
+        }
+
+        layer.Children.Add(CreateCornerBloom(System.Windows.HorizontalAlignment.Left, VerticalAlignment.Top, new System.Windows.Point(0, 0), cyan));
+        layer.Children.Add(CreateCornerBloom(System.Windows.HorizontalAlignment.Right, VerticalAlignment.Top, new System.Windows.Point(1, 0), violet));
+        layer.Children.Add(CreateCornerBloom(System.Windows.HorizontalAlignment.Left, VerticalAlignment.Bottom, new System.Windows.Point(0, 1), indigo));
+        layer.Children.Add(CreateCornerBloom(System.Windows.HorizontalAlignment.Right, VerticalAlignment.Bottom, new System.Windows.Point(1, 1), violet));
+
+        return layer;
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -714,34 +824,45 @@ public class ProdeskVisualOverlayWindow : Window
         if (_isDisposed) return;
         EnsureVisible();
 
-        _hudDetailText.Text = state.Description;
+        if (!string.IsNullOrWhiteSpace(state.Description))
+        {
+            _hudDetailText.Text = state.Description;
+        }
 
         var (targetX, targetY) = ScreenToCanvasDip(state.X, state.Y);
 
         switch (state.Type)
         {
             case "click":
-                AnimateCursorTo(targetX, targetY, 100);
+                AnimateCursorTo(targetX, targetY, 65);
                 PlayClickTactile(targetX, targetY);
                 HideDragElements();
                 _cursorBadge.Visibility = Visibility.Collapsed;
                 break;
 
             case "type":
-                AnimateCursorTo(targetX, targetY, 80);
+                if (state.X > 0 || state.Y > 0)
+                {
+                    AnimateCursorTo(targetX, targetY, 65);
+                    Canvas.SetLeft(_cursorBadge, targetX + 14);
+                    Canvas.SetTop(_cursorBadge, targetY - 12);
+                }
+                else if (_lastX > 0 && _lastY > 0)
+                {
+                    Canvas.SetLeft(_cursorBadge, _lastX + 14);
+                    Canvas.SetTop(_cursorBadge, _lastY - 12);
+                }
                 HideDragElements();
-                _cursorBadgeText.Text = "⌨ Metin";
-                Canvas.SetLeft(_cursorBadge, targetX + 16);
-                Canvas.SetTop(_cursorBadge, targetY - 14);
+                _cursorBadgeText.Text = "⌨ Yazılıyor";
                 _cursorBadge.Visibility = Visibility.Visible;
                 break;
 
             case "key":
-                _cursorBadgeText.Text = "⌨ Tuş";
+                _cursorBadgeText.Text = "⌨ Kısayol";
                 if (_lastX > 0 && _lastY > 0)
                 {
-                    Canvas.SetLeft(_cursorBadge, _lastX + 16);
-                    Canvas.SetTop(_cursorBadge, _lastY - 14);
+                    Canvas.SetLeft(_cursorBadge, _lastX + 14);
+                    Canvas.SetTop(_cursorBadge, _lastY - 12);
                     _cursorBadge.Visibility = Visibility.Visible;
                 }
                 HideDragElements();
@@ -754,8 +875,8 @@ public class ProdeskVisualOverlayWindow : Window
                     var (toDipX, toDipY) = ScreenToCanvasDip(state.ToX.Value, state.ToY.Value);
 
                     _dragStartDot.Visibility = Visibility.Visible;
-                    Canvas.SetLeft(_dragStartDot, fromDipX - 6);
-                    Canvas.SetTop(_dragStartDot, fromDipY - 6);
+                    Canvas.SetLeft(_dragStartDot, fromDipX - 5);
+                    Canvas.SetTop(_dragStartDot, fromDipY - 5);
 
                     _dragLine.X1 = fromDipX;
                     _dragLine.Y1 = fromDipY;
@@ -763,34 +884,34 @@ public class ProdeskVisualOverlayWindow : Window
                     _dragLine.Y2 = toDipY;
                     _dragLine.Visibility = Visibility.Visible;
 
-                    Canvas.SetLeft(_appleCursor, fromDipX - 13);
-                    Canvas.SetTop(_appleCursor, fromDipY - 13);
+                    Canvas.SetLeft(_appleCursor, fromDipX - 11);
+                    Canvas.SetTop(_appleCursor, fromDipY - 11);
                     _lastX = fromDipX;
                     _lastY = fromDipY;
 
-                    int dur = Math.Clamp(state.DurationMs, 100, 450);
+                    int dur = Math.Clamp(state.DurationMs, 90, 420);
                     AnimateCursorTo(toDipX, toDipY, dur);
 
                     _cursorBadgeText.Text = "↔ Sürükle";
-                    Canvas.SetLeft(_cursorBadge, toDipX + 16);
-                    Canvas.SetTop(_cursorBadge, toDipY - 14);
+                    Canvas.SetLeft(_cursorBadge, toDipX + 14);
+                    Canvas.SetTop(_cursorBadge, toDipY - 12);
                     _cursorBadge.Visibility = Visibility.Visible;
                 }
                 break;
 
             case "scroll":
-                AnimateCursorTo(targetX, targetY, 80);
+                AnimateCursorTo(targetX, targetY, 65);
                 HideDragElements();
                 _cursorBadgeText.Text = "⇅ Kaydır";
-                Canvas.SetLeft(_cursorBadge, targetX + 16);
-                Canvas.SetTop(_cursorBadge, targetY - 14);
+                Canvas.SetLeft(_cursorBadge, targetX + 14);
+                Canvas.SetTop(_cursorBadge, targetY - 12);
                 _cursorBadge.Visibility = Visibility.Visible;
                 break;
 
             case "hover":
             case "move":
             default:
-                AnimateCursorTo(targetX, targetY, 120);
+                AnimateCursorTo(targetX, targetY, 35);
                 HideDragElements();
                 _cursorBadge.Visibility = Visibility.Collapsed;
                 break;
@@ -799,10 +920,10 @@ public class ProdeskVisualOverlayWindow : Window
         RestartAutoHideTimer();
     }
 
-    private void AnimateCursorTo(double dipX, double dipY, int durationMs = 120)
+    private void AnimateCursorTo(double dipX, double dipY, int durationMs = 65)
     {
-        double destLeft = dipX - 13;
-        double destTop = dipY - 13;
+        double destLeft = dipX - 11;
+        double destTop = dipY - 11;
 
         if (_lastX < 0 || _lastY < 0)
         {
@@ -817,8 +938,29 @@ public class ProdeskVisualOverlayWindow : Window
         double dy = dipY - _lastY;
         double dist = Math.Sqrt(dx * dx + dy * dy);
 
-        if (dist > 1800 || durationMs <= 20)
+        // Draw subtle fading motion trail when gliding across screen
+        if (dist > 18 && dist < 1600)
         {
+            _motionTrailLine.X1 = _lastX;
+            _motionTrailLine.Y1 = _lastY;
+            _motionTrailLine.X2 = dipX;
+            _motionTrailLine.Y2 = dipY;
+            _motionTrailLine.Visibility = Visibility.Visible;
+
+            var trailFade = new DoubleAnimation
+            {
+                From = 0.75,
+                To = 0.0,
+                Duration = TimeSpan.FromMilliseconds(220),
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+            };
+            _motionTrailLine.BeginAnimation(UIElement.OpacityProperty, trailFade);
+        }
+
+        if (dist > 1800 || durationMs <= 25)
+        {
+            _appleCursor.BeginAnimation(Canvas.LeftProperty, null);
+            _appleCursor.BeginAnimation(Canvas.TopProperty, null);
             Canvas.SetLeft(_appleCursor, destLeft);
             Canvas.SetTop(_appleCursor, destTop);
         }
@@ -828,13 +970,13 @@ public class ProdeskVisualOverlayWindow : Window
             {
                 To = destLeft,
                 Duration = TimeSpan.FromMilliseconds(durationMs),
-                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
             };
             var animTop = new DoubleAnimation
             {
                 To = destTop,
                 Duration = TimeSpan.FromMilliseconds(durationMs),
-                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
             };
 
             _appleCursor.BeginAnimation(Canvas.LeftProperty, animLeft);
@@ -849,64 +991,69 @@ public class ProdeskVisualOverlayWindow : Window
     {
         var squeezeAnim = new DoubleAnimation
         {
-            To = 0.82,
-            Duration = TimeSpan.FromMilliseconds(70),
+            To = 0.76,
+            Duration = TimeSpan.FromMilliseconds(65),
             AutoReverse = true,
-            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseInOut }
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
         };
         _cursorScale.BeginAnimation(ScaleTransform.ScaleXProperty, squeezeAnim);
         _cursorScale.BeginAnimation(ScaleTransform.ScaleYProperty, squeezeAnim);
 
-        Canvas.SetLeft(_clickRipple, dipX - 16);
-        Canvas.SetTop(_clickRipple, dipY - 16);
+        // Inner cyan wave
+        Canvas.SetLeft(_clickRipple, dipX - 12);
+        Canvas.SetTop(_clickRipple, dipY - 12);
         _clickRipple.Visibility = Visibility.Visible;
-        _clickRipple.Opacity = 0.95;
 
         var rippleScaleAnim = new DoubleAnimation
         {
-            From = 1.0,
-            To = 2.4,
-            Duration = TimeSpan.FromMilliseconds(350),
+            From = 0.85,
+            To = 2.6,
+            Duration = TimeSpan.FromMilliseconds(380),
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
         };
         var rippleFadeAnim = new DoubleAnimation
         {
             From = 0.95,
             To = 0.0,
-            Duration = TimeSpan.FromMilliseconds(350)
+            Duration = TimeSpan.FromMilliseconds(380),
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
         };
-        rippleFadeAnim.Completed += (_, _) =>
-        {
-            _clickRipple.Visibility = Visibility.Collapsed;
-        };
+        rippleFadeAnim.Completed += (_, _) => _clickRipple.Visibility = Visibility.Collapsed;
 
         _rippleScale.BeginAnimation(ScaleTransform.ScaleXProperty, rippleScaleAnim);
         _rippleScale.BeginAnimation(ScaleTransform.ScaleYProperty, rippleScaleAnim);
         _clickRipple.BeginAnimation(UIElement.OpacityProperty, rippleFadeAnim);
+
+        // Outer violet wave
+        Canvas.SetLeft(_clickRippleOuter, dipX - 14);
+        Canvas.SetTop(_clickRippleOuter, dipY - 14);
+        _clickRippleOuter.Visibility = Visibility.Visible;
+
+        var outerScaleAnim = new DoubleAnimation
+        {
+            From = 0.9,
+            To = 3.3,
+            Duration = TimeSpan.FromMilliseconds(460),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+        var outerFadeAnim = new DoubleAnimation
+        {
+            From = 0.75,
+            To = 0.0,
+            Duration = TimeSpan.FromMilliseconds(460),
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+        };
+        outerFadeAnim.Completed += (_, _) => _clickRippleOuter.Visibility = Visibility.Collapsed;
+
+        _rippleOuterScale.BeginAnimation(ScaleTransform.ScaleXProperty, outerScaleAnim);
+        _rippleOuterScale.BeginAnimation(ScaleTransform.ScaleYProperty, outerScaleAnim);
+        _clickRippleOuter.BeginAnimation(UIElement.OpacityProperty, outerFadeAnim);
     }
 
     public void UpdateTargetBounds(Win32.RECT? bounds)
     {
-        if (_isDisposed) return;
-        if (!bounds.HasValue || bounds.Value.Width <= 0 || bounds.Value.Height <= 0)
-        {
-            _targetHighlightBorder.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        var r = bounds.Value;
-        var (x, y) = ScreenToCanvasDip(r.Left, r.Top);
-        var source = PresentationSource.FromVisual(this);
-        double scaleX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
-        double scaleY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
-        if (scaleX <= 0) scaleX = 1.0;
-        if (scaleY <= 0) scaleY = 1.0;
-
-        _targetHighlightBorder.Margin = new Thickness(x, y, 0, 0);
-        _targetHighlightBorder.Width = r.Width / scaleX;
-        _targetHighlightBorder.Height = r.Height / scaleY;
-        _targetHighlightBorder.Visibility = Visibility.Visible;
-
+        // Intentionally no-op: never draw rectangular frames or colored boxes on the user's screen.
+        if (_isDisposed || !bounds.HasValue) return;
         EnsureVisible();
         RestartAutoHideTimer();
     }
@@ -914,13 +1061,22 @@ public class ProdeskVisualOverlayWindow : Window
     private void EnsureVisible()
     {
         if (!IsVisible) Show();
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd != IntPtr.Zero)
+        {
+            Win32.SetWindowPos(
+                hwnd,
+                Win32.HWND_TOPMOST,
+                0, 0, 0, 0,
+                Win32.SWP_NOMOVE | Win32.SWP_NOSIZE | Win32.SWP_NOACTIVATE | Win32.SWP_SHOWWINDOW);
+        }
         if (Opacity < 0.99)
         {
             var fadeIn = new DoubleAnimation
             {
                 To = 1.0,
-                Duration = TimeSpan.FromMilliseconds(120),
-                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+                Duration = TimeSpan.FromMilliseconds(140),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
             };
             BeginAnimation(UIElement.OpacityProperty, fadeIn);
         }
@@ -932,13 +1088,13 @@ public class ProdeskVisualOverlayWindow : Window
         var fadeOut = new DoubleAnimation
         {
             To = 0.0,
-            Duration = TimeSpan.FromMilliseconds(300),
+            Duration = TimeSpan.FromMilliseconds(350),
             EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn }
         };
         fadeOut.Completed += (_, _) =>
         {
             HideDragElements();
-            _targetHighlightBorder.Visibility = Visibility.Collapsed;
+            _motionTrailLine.Visibility = Visibility.Collapsed;
             _cursorBadge.Visibility = Visibility.Collapsed;
             _lastX = -100;
             _lastY = -100;
@@ -952,7 +1108,7 @@ public class ProdeskVisualOverlayWindow : Window
         BeginAnimation(UIElement.OpacityProperty, null);
         Opacity = 0.0;
         HideDragElements();
-        _targetHighlightBorder.Visibility = Visibility.Collapsed;
+        _motionTrailLine.Visibility = Visibility.Collapsed;
         _cursorBadge.Visibility = Visibility.Collapsed;
         _lastX = -100;
         _lastY = -100;

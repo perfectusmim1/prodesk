@@ -75,7 +75,7 @@ execFileSync(
     'true',
     '-p:PublishSingleFile=true',
     '-p:IncludeNativeLibrariesForSelfExtract=true',
-    '-p:PublishReadyToRun=true',
+    '-p:PublishReadyToRun=false',
     '-o',
     publishOutDir,
   ],

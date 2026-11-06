@@ -34,6 +34,12 @@ public class HelperSettings
     [JsonPropertyName("waitForUserIdleMs")]
     public int WaitForUserIdleMs { get; set; } = 0;
 
+    [JsonPropertyName("restoreFocusAfterAction")]
+    public bool RestoreFocusAfterAction { get; set; } = false;
+
+    [JsonPropertyName("restoreCursorAfterAction")]
+    public bool RestoreCursorAfterAction { get; set; } = false;
+
     [JsonPropertyName("keepHelperAlive")]
     public bool KeepHelperAlive { get; set; } = false;
 
